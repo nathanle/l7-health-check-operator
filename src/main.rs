@@ -13,14 +13,9 @@ pub struct MemberSpec {
   pub memberOf: Option<String>
 }
 
-#[tokio::main]
-async fn main() {
-    println!("starting hello world operator");
-    let client = Client::try_default().await.expect("cannot infer client config");
-    let client2 = Client::try_default().await;
 
-    //let crds: Api<Member> = Api::namespaced(client, "default");
-    let nodecheck: Api<NodeCheck> = Api::namespaced(client, "default");
+async fn node_watch() {
+    let client2 = Client::try_default().await;
     let nds: Api<Node> = Api::all(client2.expect("Node client connection failed"));
     let mut watcher = nds.watch(&Default::default(), "0").await.unwrap().boxed();
     while let Some(event) = watcher.try_next().await.expect("failed") {
@@ -37,16 +32,20 @@ async fn main() {
             _ => {}
         }
     }
+}
 
+async fn health_check_watch() {
+    let client = Client::try_default().await.expect("cannot infer client config");
+
+    let nodecheck: Api<NodeCheck> = Api::namespaced(client, "default");
     let lp = ListParams::default();
     println!("{:#?}", &lp);
-
     println!("subscribing events of type health-check.linode.com/v1");
     let mut stream = nodecheck.watch(&lp, "0").await.unwrap().boxed();
     while let Some(status) = stream.try_next().await.expect("watch stream failed") {
         match status {
-            WatchEvent::Added(node) => {
-                println!("Node applied: {}", node.metadata.name.unwrap_or_default());
+            WatchEvent::Added(nodecheck) => {
+                println!("Check applied: {}", nodecheck.metadata.name.unwrap_or_default());
               //match member.spec.memberOf {
               //  None => println!("welcome {}",member.metadata.name.unwrap()),
               //  Some(member_of) => println!("welcome {} to the team {}"
@@ -54,14 +53,24 @@ async fn main() {
               //            ,member_of),
               //}
             },
-            WatchEvent::Modified(_member) => {
+            WatchEvent::Modified(nodecheck) => {
             },
-            WatchEvent::Deleted(member) => {
-              println!("sad to see you go {}",member.metadata.name.unwrap());
+            WatchEvent::Deleted(nodecheck) => {
+              //println!("sad to see you go {}",member.metadata.name.unwrap());
             },
-            WatchEvent::Error(member) => println!("error: {}", member),
+            WatchEvent::Error(nodecheck) => println!("error: {}", nodecheck),
             _ => {}
         }
     }
+}
+
+
+#[tokio::main]
+async fn main() {
+    println!("starting hello world operator");
+    let n = tokio::spawn(node_watch());
+    let h = tokio::spawn(health_check_watch());
+    let _ = n.await;
+    let _ = h.await;
     println!("done");
 }
