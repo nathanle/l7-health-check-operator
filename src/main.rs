@@ -9,8 +9,9 @@ use schemars::JsonSchema;
 #[derive(CustomResource, Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[kube(group = "health-check.linode.com", version = "v1", kind="NodeCheck", namespaced)]
 #[allow(non_snake_case)]
-pub struct MemberSpec {
-  pub memberOf: Option<String>
+pub struct HealthCheckSpec {
+  pub interval: i64,
+  pub port: i64,
 }
 
 
@@ -46,17 +47,14 @@ async fn health_check_watch() {
         match status {
             WatchEvent::Added(nodecheck) => {
                 println!("Check applied: {}", nodecheck.metadata.name.unwrap_or_default());
-              //match member.spec.memberOf {
-              //  None => println!("welcome {}",member.metadata.name.unwrap()),
-              //  Some(member_of) => println!("welcome {} to the team {}"
-              //            ,member.metadata.name.unwrap()
-              //            ,member_of),
-              //}
             },
             WatchEvent::Modified(nodecheck) => {
+                println!("Check modifiied: {}", nodecheck.metadata.name.unwrap_or_default());
+                println!("Port: {}", nodecheck.spec.port);
+                println!("Interval: {}", nodecheck.spec.interval);
             },
             WatchEvent::Deleted(nodecheck) => {
-              //println!("sad to see you go {}",member.metadata.name.unwrap());
+                println!("Check deleted: {}", nodecheck.metadata.name.unwrap_or_default());
             },
             WatchEvent::Error(nodecheck) => println!("error: {}", nodecheck),
             _ => {}

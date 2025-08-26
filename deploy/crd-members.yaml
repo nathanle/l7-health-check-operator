@@ -15,11 +15,11 @@ spec:
             spec:
               type: object
               properties:
-                cronSpec:
-                  type: string
+                interval:
+                  type: integer 
                 image:
                   type: string
-                replicas:
+                port:
                   type: integer
   scope: Namespaced
   names:

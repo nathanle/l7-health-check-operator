@@ -1,0 +1,7 @@
+apiVersion: health-check.linode.com/v1
+kind: NodeCheck 
+metadata:
+  name: default-checks 
+spec: 
+  port: 123456
+  interval: 10
