@@ -1,4 +1,4 @@
-FROM rust:1.46.0-alpine AS builder
+FROM rust:1.86.0-alpine AS builder
 # build project
 RUN apk add musl-dev
 WORKDIR /usr/src/

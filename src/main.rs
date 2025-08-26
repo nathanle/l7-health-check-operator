@@ -5,6 +5,9 @@ use futures::{StreamExt, TryStreamExt};
 use serde::{Serialize, Deserialize};
 use kube_derive::CustomResource;
 use schemars::JsonSchema;
+use std::io::{stdout, Read, Write};
+use std::net::TcpListener;
+
 
 #[derive(CustomResource, Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[kube(group = "health-check.linode.com", version = "v1", kind="NodeCheck", namespaced)]
@@ -14,6 +17,26 @@ pub struct HealthCheckSpec {
   pub port: i64,
 }
 
+
+async fn port_check(port: i64) {
+  let bind_host = "localhost";
+  let addr = format!("{}:{}", bind_host, port);
+  let listener = TcpListener::bind(addr.as_str()).unwrap();
+  for stream in listener.incoming() {
+    match stream {
+      Ok(mut s) => {
+        println!("Connection accepted");
+    
+        let mut buf = [0; 128];
+        let read_bytes = s.read(&mut buf).unwrap();
+        stdout().write(&buf[0..read_bytes]).unwrap();
+      }
+      Err(e) => {
+        println!("Error while accepting incoming connection - {}", e);
+      }
+    }
+  }
+}
 
 async fn node_watch() {
     let client2 = Client::try_default().await;

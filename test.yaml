@@ -3,5 +3,5 @@ kind: NodeCheck
 metadata:
   name: default-checks 
 spec: 
-  port: 123456
+  port: 1234
   interval: 10
