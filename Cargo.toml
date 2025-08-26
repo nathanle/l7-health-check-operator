@@ -1,8 +1,8 @@
 [package]
-name = "hello-world-operator"
+name = "health-check-operator"
 version = "0.1.0"
-authors = ["Jens Walter <jens@apimeister.com>"]
-edition = "2018"
+authors = [""]
+edition = "2024"
 
 [dependencies]
 kube = { version = "0.74", default-features = false, features = ["rustls-tls","runtime","derive","client"] }
