@@ -30,23 +30,11 @@ pub struct HealthCheckSpec {
 
 async fn check_port(ip_address: String, port_number: i32) {
     println!("{}", ip_address);
-  let addr = format!("{}:{}", ip_address.to_string(), port_number);
-  println!("{}", addr);
-  let listener = TcpListener::bind(addr.as_str()).unwrap();
-  for stream in listener.incoming() {
-    match stream {
-      Ok(mut s) => {
-        println!("Connection accepted");
-    
-        let mut buf = [0; 128];
-        let read_bytes = s.read(&mut buf).unwrap();
-        stdout().write(&buf[0..read_bytes]).unwrap();
-      }
-      Err(e) => {
-        println!("Error while accepting incoming connection - {}", e);
-      }
-    }
-  }
+    let addr = format!("{}:{}", ip_address.to_string(), port_number);
+    println!("{}", addr);
+    let free_port = free_local_port().unwrap();
+    let is_reachable = is_port_reachable(addr);
+    println!("Reachable: {}", is_reachable);
 }
 
 async fn check_pod(target_node_name: String) {
