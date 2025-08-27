@@ -10,6 +10,15 @@ use std::net::TcpListener;
 use port_check::*;
 use std::net::*;
 use std::time::Duration;
+use std::collections::HashMap;
+use crossbeam_utils::atomic::AtomicCell;
+
+
+#[derive(Default)]
+struct IpAndPort<'a> {
+    port_number: i32,
+    ip_address: &'a str,
+}
 
 #[derive(CustomResource, Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
 #[kube(group = "health-check.demo.com", version = "v1", kind="NodeCheck", namespaced)]
@@ -19,9 +28,10 @@ pub struct HealthCheckSpec {
   pub port: i64,
 }
 
-async fn port_check(port: i64) {
-  let bind_host = "localhost";
-  let addr = format!("{}:{}", bind_host, port);
+async fn check_port(ip_address: String, port_number: i32) {
+    println!("{}", ip_address);
+  let addr = format!("{}:{}", ip_address.to_string(), port_number);
+  println!("{}", addr);
   let listener = TcpListener::bind(addr.as_str()).unwrap();
   for stream in listener.incoming() {
     match stream {
@@ -40,18 +50,10 @@ async fn port_check(port: i64) {
 }
 
 async fn check_pod(target_node_name: String) {
+    let mut t: i32 = 0;
+    let mut s: String = "".to_string();
     let client3 = Client::try_default().await;
     let pods: Api<Pod> = Api::namespaced(client3.expect("Pod AP call failed"), "default");
-    //if let Some(pod) = pods.get("nginx-deployment").await.unwrap().spec {
-    //    println!("{:?}", pods);
-    //} else {
-    //    println!("{:?}", pods);
-    //}
-
-    //let lp = ListParams::default().labels("app=nginx"); // for this app only
-    //for p in pods.list(&lp).await.unwrap() {
-        //println!("Found Pod: {:#?}", p);
-    //let target_node_name = &node.metadata.name.unwrap_or_default();
     let pod_list = pods.list(&ListParams::default()).await.unwrap();
     let filtered_pods: Vec<Pod> = pod_list
         .items
@@ -70,19 +72,27 @@ async fn check_pod(target_node_name: String) {
         target_node_name
     );
     for p in filtered_pods {
-        println!("  - {}", p.metadata.name.unwrap());
+        println!("  - {}", p.metadata.name.as_ref().unwrap());
            if let Some(spec) = p.spec {
+               //println!("{:#?}", spec.containers);
             for container in spec.containers {
                 if let Some(ports) = container.ports {
                     for port in ports {
                         println!("  Container: {}, Port: {}", container.name, port.container_port);
+                        t = port.container_port;
                     }
                 }
+                if let Some(ref ips) = p.metadata.annotations {
+                    //Need some error handling.
+                    let i  = ips.get("cni.projectcalico.org/podIP").unwrap().strip_suffix("/32").unwrap();
+                    s = i.to_string();
+                    println!("  IP: {}", &s);
+                }
+            let _ = tokio::spawn(check_port(s.clone(), t));
             }
         }
     }
 }
-
 
 async fn node_watch() {
     let client2 = Client::try_default().await;
@@ -95,7 +105,10 @@ async fn node_watch() {
                 println!("Node Added: {}", node_name);
                 let _ = tokio::spawn(check_pod(node_name));
             }
-            WatchEvent::Modified(_node) => {
+            WatchEvent::Modified(node) => {
+                let node_name = node.metadata.name.clone().unwrap_or_default();
+                println!("Node Modified: {}", node_name);
+                let _ = tokio::spawn(check_pod(node_name));
             },
             WatchEvent::Deleted(node) => {
               println!("Deleted {}", node.metadata.name.unwrap());
