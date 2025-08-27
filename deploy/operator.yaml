@@ -13,6 +13,8 @@ spec:
         app: node-health-check-operator-rs
     spec:
       serviceAccountName: node-health-check-operator-rs-account
+      imagePullSecrets:
+      - name: ghcr-login-secret
       containers:
       - name: node-health-check-operator-rs
         image: ghcr.io/nathanle/l7-health-check-operator:latest
@@ -26,4 +28,4 @@ spec:
         env:
           - name: KUBERNETES_SERVICE_HOST
             value: kubernetes.default.svc.cluster.local
-
+        imagePullPolicy: IfNotPresent 

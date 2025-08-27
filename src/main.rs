@@ -1,22 +1,23 @@
 extern crate serde_derive;
 use kube::{api::{Api, ListParams, WatchEvent}, client::Client};
-use k8s_openapi::api::core::v1::Node;
+use k8s_openapi::api::core::v1::{Node, Pod};
 use futures::{StreamExt, TryStreamExt};
 use serde::{Serialize, Deserialize};
 use kube_derive::CustomResource;
 use schemars::JsonSchema;
 use std::io::{stdout, Read, Write};
 use std::net::TcpListener;
-
+use port_check::*;
+use std::net::*;
+use std::time::Duration;
 
 #[derive(CustomResource, Serialize, Deserialize, Default, Clone, Debug, JsonSchema)]
-#[kube(group = "health-check.linode.com", version = "v1", kind="NodeCheck", namespaced)]
+#[kube(group = "health-check.demo.com", version = "v1", kind="NodeCheck", namespaced)]
 #[allow(non_snake_case)]
 pub struct HealthCheckSpec {
   pub interval: i64,
   pub port: i64,
 }
-
 
 async fn port_check(port: i64) {
   let bind_host = "localhost";
@@ -38,6 +39,51 @@ async fn port_check(port: i64) {
   }
 }
 
+async fn check_pod(target_node_name: String) {
+    let client3 = Client::try_default().await;
+    let pods: Api<Pod> = Api::namespaced(client3.expect("Pod AP call failed"), "default");
+    //if let Some(pod) = pods.get("nginx-deployment").await.unwrap().spec {
+    //    println!("{:?}", pods);
+    //} else {
+    //    println!("{:?}", pods);
+    //}
+
+    //let lp = ListParams::default().labels("app=nginx"); // for this app only
+    //for p in pods.list(&lp).await.unwrap() {
+        //println!("Found Pod: {:#?}", p);
+    //let target_node_name = &node.metadata.name.unwrap_or_default();
+    let pod_list = pods.list(&ListParams::default()).await.unwrap();
+    let filtered_pods: Vec<Pod> = pod_list
+        .items
+        .into_iter()
+        .filter(|p| {
+            if let Some(spec) = &p.spec {
+                spec.node_name.as_deref() == Some(&target_node_name)
+            } else {
+                false
+            }
+        })
+        .collect();
+    println!(
+        "\nFound {} pods on node '{}':",
+        filtered_pods.len(),
+        target_node_name
+    );
+    for p in filtered_pods {
+        println!("  - {}", p.metadata.name.unwrap());
+           if let Some(spec) = p.spec {
+            for container in spec.containers {
+                if let Some(ports) = container.ports {
+                    for port in ports {
+                        println!("  Container: {}, Port: {}", container.name, port.container_port);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 async fn node_watch() {
     let client2 = Client::try_default().await;
     let nds: Api<Node> = Api::all(client2.expect("Node client connection failed"));
@@ -45,7 +91,9 @@ async fn node_watch() {
     while let Some(event) = watcher.try_next().await.expect("failed") {
         match event {
             WatchEvent::Added(node) => {
-                println!("Node Added: {}", node.metadata.name.unwrap_or_default());
+                let node_name = node.metadata.name.clone().unwrap_or_default();
+                println!("Node Added: {}", node_name);
+                let _ = tokio::spawn(check_pod(node_name));
             }
             WatchEvent::Modified(_node) => {
             },
@@ -64,8 +112,9 @@ async fn health_check_watch() {
     let nodecheck: Api<NodeCheck> = Api::namespaced(client, "default");
     let lp = ListParams::default();
     println!("{:#?}", &lp);
-    println!("subscribing events of type health-check.linode.com/v1");
+    println!("subscribing events of type health-check.demo.com/v1");
     let mut stream = nodecheck.watch(&lp, "0").await.unwrap().boxed();
+
     while let Some(status) = stream.try_next().await.expect("watch stream failed") {
         match status {
             WatchEvent::Added(nodecheck) => {
@@ -84,7 +133,6 @@ async fn health_check_watch() {
         }
     }
 }
-
 
 #[tokio::main]
 async fn main() {
