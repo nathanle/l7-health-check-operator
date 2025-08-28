@@ -12,6 +12,8 @@ use std::net::*;
 use std::time::Duration;
 use std::collections::HashMap;
 use crossbeam_utils::atomic::AtomicCell;
+use std::collections::BTreeMap;
+use kube::api::{Patch, PatchParams};
 
 
 #[derive(Default)]
@@ -28,8 +30,44 @@ pub struct HealthCheckSpec {
   pub port: i64,
 }
 
+
+async fn add_node_patch(node_name: String) {
+    let client = Client::try_default().await;
+    let nd: Api<Node> = Api::all(client.expect("Node client connection failed"));
+    println!("Node name {}", node_name);
+    let mut node = nd.get(&node_name).await.unwrap();
+    let mut annotations = node.metadata.annotations.unwrap_or_default();
+    annotations.insert("node.k8s.linode.com/exclude-from-nb".to_string(), "true".to_string());
+    node.metadata.annotations = Some(annotations);
+    let patch = Patch::Merge(serde_json::json!({
+        "metadata": {
+            "annotations": node.metadata.annotations
+        }
+    }));
+    let patch_params = PatchParams::default();
+    nd.patch(&node_name, &patch_params, &patch).await.unwrap();
+    println!("Annotations updated for pod: {}", node_name);
+}
+
+async fn remove_node_patch(node_name: String) {
+    let client = Client::try_default().await;
+    let nd: Api<Node> = Api::all(client.expect("Node client connection failed"));
+    println!("Node name {}", node_name);
+    let mut node = nd.get(&node_name).await.unwrap();
+    let mut annotations = node.metadata.annotations.unwrap_or_default();
+    annotations.remove("node.k8s.linode.com/exclude-from-nb");
+    node.metadata.annotations = Some(annotations);
+    let patch = Patch::Merge(serde_json::json!({
+        "metadata": {
+            "annotations": node.metadata.annotations
+        }
+    }));
+    let patch_params = PatchParams::default();
+    nd.patch(&node_name, &patch_params, &patch).await.unwrap();
+    println!("Removed annotations for pod: {}", node_name);
+
+}
 async fn check_port(ip_address: String, port_number: i32) {
-    println!("{}", ip_address);
     let addr = format!("{}:{}", ip_address.to_string(), port_number);
     println!("{}", addr);
     let free_port = free_local_port().unwrap();
@@ -70,11 +108,17 @@ async fn check_pod(target_node_name: String) {
                         t = port.container_port;
                     }
                 }
-                if let Some(ref ips) = p.metadata.annotations {
+                if let Some(status) = &p.status {
+                    if let Some(pod_ip) = &status.pod_ip {
+                        println!("Pod IP {}", pod_ip);
+                        s = pod_ip.to_string();
+                    } else {
+                        println!("Pod IP not yet assigned.");
+                    }
+                //if let Some(ref ips) = p.metadata.annotations {
                     //Need some error handling.
-                    let i  = ips.get("cni.projectcalico.org/podIP").unwrap().strip_suffix("/32").unwrap();
-                    s = i.to_string();
-                    println!("  IP: {}", &s);
+                    //let i  = ips.get("cni.projectcalico.org/podIP").unwrap().strip_suffix("/32").unwrap();
+                    //println!("  IP: {}", &s);
                 }
             let _ = tokio::spawn(check_port(s.clone(), t));
             }
@@ -91,12 +135,14 @@ async fn node_watch() {
             WatchEvent::Added(node) => {
                 let node_name = node.metadata.name.clone().unwrap_or_default();
                 println!("Node Added: {}", node_name);
-                let _ = tokio::spawn(check_pod(node_name));
+                let _ = tokio::spawn(add_node_patch(node_name.clone()));
+                let _ = tokio::spawn(check_pod(node_name.clone()));
+                let _ = tokio::spawn(remove_node_patch(node_name.clone()));
             }
-            WatchEvent::Modified(node) => {
-                let node_name = node.metadata.name.clone().unwrap_or_default();
-                println!("Node Modified: {}", node_name);
-                let _ = tokio::spawn(check_pod(node_name));
+            WatchEvent::Modified(_node) => {
+                //let node_name = node.metadata.name.clone().unwrap_or_default();
+                //println!("Node Modified: {}", node_name);
+                //let _ = tokio::spawn(check_pod(node_name));
             },
             WatchEvent::Deleted(node) => {
               println!("Deleted {}", node.metadata.name.unwrap());
